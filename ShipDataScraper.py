@@ -4,20 +4,25 @@ from pymongo import MongoClient
 import dns
 from bs4 import BeautifulSoup
 import time
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-def save_ship_to_DB(shipData, mmsi):
+def save_ship_to_DB(mmsi):
     mmsi, flag, width, length, image = get_ship_data(mmsi)
-    shipDataDocument = {
+    
+    firestore_db.collection(u'ships').add({
     "mmsi": mmsi,
     "width":width,
     "length":length,
     "flag":flag,
-    "image":image}
-    shipData.insert_one(shipDataDocument)
+    "image":image})
+    
     print("Inserted:", mmsi, "to DB")
 
 
+#Scrapes extra ship data from 3rd party website. Used only if data is not found in DB.
 def get_ship_data(mmsi):
+    #If imo not found, uses mmsi to find ships page
     site = 'https://www.vesseltracker.com/en/vessels.html?term=' + str(mmsi)
     response = requests.get(site)
     soup = BeautifulSoup(response.content, 'html.parser')
@@ -64,14 +69,19 @@ def fetch_ships():
     ship_data = response.json()['features']
     return ship_data
 
+cred = credentials.Certificate("/home/pi/Desktop/serviceAccountKey.json")
+print(cred)
 
-client = MongoClient("mongodb+srv://mongoUser:password@mustola.g1flp.mongodb.net/ships?retryWrites=true&w=majority")
-db = client.ships
-shipData = db.shipDetails
+firebase_admin.initialize_app(cred)
+firestore_db = firestore.client()
+
 mmsi_list = []
 
-for ship in shipData.find():
+ships = list(firestore_db.collection(u'ships').get())
+for snapshot in ships:
+    ship = snapshot.to_dict()
     mmsi_list.append(ship['mmsi'])
+print(mmsi_list)
 
 while True:
     print("Fetching ships")
@@ -83,7 +93,7 @@ while True:
             pass        
         else:
             mmsi_list.append(mmsi)
-            save_ship_to_DB(shipData, mmsi)
-    time.sleep(5)
+            save_ship_to_DB(mmsi)
+    time.sleep(2)
 
 
